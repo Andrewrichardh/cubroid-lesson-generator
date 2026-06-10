@@ -67,7 +67,7 @@ from llama_parse import LlamaParse
 @st.cache_resource(show_spinner="Loading knowledge base...")
 def load_index():
     parser = LlamaParse(
-        api_key=st.secrets["llx-640ulN0pgNuumU8IqrW68PT9mzcZbqX9KhknqMCiNKOD4kKZ"],
+        api_key=st.secrets["LLAMA_CLOUD_API_KEY"],
         result_type="markdown"
     )
     docs = SimpleDirectoryReader("docs", file_extractor={".pdf": parser}).load_data()
