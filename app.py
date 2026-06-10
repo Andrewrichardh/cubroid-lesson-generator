@@ -1,20 +1,22 @@
-import streamlit as st
+import streamlit as st  # Cubroid Lesson Generator v2
 import openai
 import os
 import io
+import re
 import fitz  # PyMuPDF
 from llama_index.core import VectorStoreIndex, SimpleDirectoryReader, Settings
 from llama_index.llms.openai import OpenAI
 from llama_index.embeddings.openai import OpenAIEmbedding
+from llama_parse import LlamaParse
 from reportlab.lib.pagesizes import A4
 from reportlab.lib import colors
-from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.lib.styles import ParagraphStyle
 from reportlab.lib.units import cm
 from reportlab.platypus import (
     SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle,
     HRFlowable, Image as RLImage,
 )
-from reportlab.lib.enums import TA_LEFT, TA_CENTER
+from reportlab.lib.enums import TA_CENTER
 from PIL import Image as PILImage
 
 # ── Brand colours ─────────────────────────────────────────────────────────────
@@ -23,6 +25,13 @@ CUBROID_ORANGE = "#F97316"
 CUBROID_LIGHT  = "#EFF6FF"
 CUBROID_GREY   = "#64748B"
 
+SUBJECT = "Coding and Robotics"
+GRADES  = ["Grade R", "Grade 1", "Grade 2", "Grade 3"]
+
+CAPS_DOC      = "CAPS FP CODING AND ROBOTICS.pdf"
+TEACHER_GUIDE = "Step 1 Teacher Guides (Book 1–12)"
+MISSION_GUIDE = "Mission Coding-Phone.pdf"
+
 # ── Page config ───────────────────────────────────────────────────────────────
 st.set_page_config(
     page_title="Cubroid Lesson Generator",
@@ -30,30 +39,119 @@ st.set_page_config(
     layout="wide",
 )
 
-# ── Custom CSS ────────────────────────────────────────────────────────────────
+# ── Custom CSS — clean, minimal, polished ─────────────────────────────────────
 st.markdown("""
 <style>
-  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+
   html, body, [class*="css"] { font-family: 'Inter', sans-serif; }
-  section[data-testid="stSidebar"] { background: #1E3A8A; }
-  section[data-testid="stSidebar"] * { color: white !important; }
-  .section-card {
+
+  /* Hide Streamlit chrome */
+  #MainMenu, footer, header[data-testid="stHeader"] { visibility: hidden; height: 0; }
+  .block-container { padding-top: 2.5rem; max-width: 1100px; }
+
+  /* Sidebar — light, quiet */
+  section[data-testid="stSidebar"] {
+    background: #FFFFFF;
+    border-right: 1px solid #E2E8F0;
+  }
+  section[data-testid="stSidebar"] .block-container { padding-top: 1.5rem; }
+  section[data-testid="stSidebar"] label { font-size: 0.8rem !important; color: #475569 !important; }
+
+  /* Hero */
+  .hero {
+    text-align: center;
+    padding: 2.5rem 1rem 2rem 1rem;
+  }
+  .hero .badge {
+    display: inline-block;
     background: #EFF6FF;
-    border-left: 4px solid #F97316;
-    border-radius: 8px;
-    padding: 16px 20px;
-    margin-bottom: 16px;
-  }
-  .section-card h4 {
-    margin: 0 0 8px 0;
     color: #1E3A8A;
-    font-size: 0.9rem;
-    font-weight: 700;
+    border: 1px solid #BFDBFE;
+    border-radius: 999px;
+    padding: 4px 14px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    letter-spacing: 0.04em;
     text-transform: uppercase;
-    letter-spacing: 0.05em;
+    margin-bottom: 1rem;
   }
-  .app-header h1 { color: #1E3A8A; font-size: 1.6rem; font-weight: 700; margin: 0; }
-  .app-header p  { color: #64748B; margin: 0; font-size: 0.9rem; }
+  .hero h1 {
+    color: #0F172A;
+    font-size: 2.4rem;
+    font-weight: 800;
+    letter-spacing: -0.03em;
+    margin: 0 0 0.5rem 0;
+    line-height: 1.1;
+  }
+  .hero h1 span { color: #1E3A8A; }
+  .hero p {
+    color: #64748B;
+    font-size: 1.05rem;
+    max-width: 540px;
+    margin: 0 auto;
+    line-height: 1.6;
+  }
+
+  /* Config summary pills */
+  .pill-row { text-align: center; margin: 1.2rem 0 2rem 0; }
+  .pill {
+    display: inline-block;
+    background: #FFFFFF;
+    border: 1px solid #E2E8F0;
+    border-radius: 999px;
+    padding: 6px 16px;
+    margin: 4px;
+    font-size: 0.85rem;
+    color: #334155;
+    font-weight: 500;
+  }
+  .pill b { color: #1E3A8A; font-weight: 700; }
+
+  /* Section cards */
+  .card {
+    background: #FFFFFF;
+    border: 1px solid #E2E8F0;
+    border-radius: 14px;
+    padding: 18px 20px;
+    margin-bottom: 14px;
+    transition: box-shadow .15s ease, border-color .15s ease;
+  }
+  .card:hover { box-shadow: 0 4px 16px rgba(15,23,42,0.06); border-color: #CBD5E1; }
+  .card h4 {
+    margin: 0 0 6px 0;
+    color: #0F172A;
+    font-size: 0.92rem;
+    font-weight: 700;
+  }
+  .card .num {
+    display: inline-block;
+    width: 22px; height: 22px;
+    line-height: 22px;
+    text-align: center;
+    background: #1E3A8A;
+    color: white;
+    border-radius: 6px;
+    font-size: 0.7rem;
+    font-weight: 700;
+    margin-right: 8px;
+  }
+  .card p { margin: 0; color: #64748B; font-size: 0.84rem; line-height: 1.5; }
+
+  /* Sources strip */
+  .sources {
+    background: #F8FAFC;
+    border: 1px dashed #CBD5E1;
+    border-radius: 14px;
+    padding: 16px 20px;
+    margin-top: 0.5rem;
+    font-size: 0.84rem;
+    color: #475569;
+    line-height: 1.7;
+  }
+  .sources b { color: #1E3A8A; }
+
+  div.stButton > button, div.stDownloadButton > button { border-radius: 10px; font-weight: 600; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -62,15 +160,17 @@ openai.api_key = st.secrets["OPENAI_API_KEY"]
 Settings.llm = OpenAI(model="gpt-4o-mini", api_key=st.secrets["OPENAI_API_KEY"])
 Settings.embed_model = OpenAIEmbedding(api_key=st.secrets["OPENAI_API_KEY"])
 
-from llama_parse import LlamaParse
-
 @st.cache_resource(show_spinner="Loading knowledge base...")
 def load_index():
     parser = LlamaParse(
         api_key=st.secrets["LLAMA_CLOUD_API_KEY"],
         result_type="markdown"
     )
-    docs = SimpleDirectoryReader("docs", file_extractor={".pdf": parser}).load_data()
+    docs = SimpleDirectoryReader(
+        "docs",
+        recursive=True,
+        file_extractor={".pdf": parser}
+    ).load_data()
     return VectorStoreIndex.from_documents(docs)
 
 index = load_index()
@@ -78,12 +178,11 @@ index = load_index()
 # ── Session state defaults ────────────────────────────────────────────────────
 DEFAULTS = {
     "step": 1,
-    "grade": "Grade 4",
+    "grade": "Grade R",
     "term": 1,
     "week": 1,
-    "subject": "Technology",
-    "robot": "Cuboid Mini",
-    "duration": "45 minutes",
+    "robot": "Cubroid Coding Blocks",
+    "duration": "30 minutes",
     "teacher_name": "",
     "school_name": "",
     "custom_notes": "",
@@ -96,72 +195,123 @@ for key, default in DEFAULTS.items():
         st.session_state[key] = default
 
 
-# ── IMAGE EXTRACTION ──────────────────────────────────────────────────────────
-def extract_images_from_nodes(source_nodes, max_images=4, min_bytes=8000):
-    images = []
-    seen = set()
-    docs_dir = "docs"
-    for node in source_nodes:
-        meta = node.metadata or {}
-        fp = meta.get("file_path") or meta.get("file_name", "")
-        page_num = int(meta.get("page_label", meta.get("page", 1))) - 1
-        if not os.path.isabs(fp):
-            fp = os.path.join(docs_dir, fp)
-        if not os.path.exists(fp):
-            continue
-        try:
-            pdf_doc = fitz.open(fp)
-            for p in [max(0, page_num), min(page_num + 1, len(pdf_doc) - 1)]:
-                for img in pdf_doc[p].get_images(full=True):
-                    xref = img[0]
-                    if xref in seen:
-                        continue
-                    base = pdf_doc.extract_image(xref)
-                    raw = base["image"]
-                    if len(raw) < min_bytes:
-                        continue
-                    try:
-                        pil = PILImage.open(io.BytesIO(raw))
-                        w, h = pil.size
-                        if w < 80 or h < 80 or max(w, h) / max(min(w, h), 1) > 6:
-                            continue
-                        buf = io.BytesIO()
-                        pil.convert("RGB").save(buf, format="JPEG", quality=85)
-                        images.append({
-                            "bytes": buf.getvalue(),
-                            "source": os.path.basename(fp),
-                            "page": p + 1,
-                        })
-                        seen.add(xref)
-                    except Exception:
-                        continue
-                    if len(images) >= max_images:
-                        return images
-        except Exception:
-            continue
-    return images
+# ── MARKDOWN CLEANING (shared by PDF + parser) ────────────────────────────────
+def md_inline(s):
+    """Convert inline markdown to ReportLab markup, escaping XML first."""
+    s = s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+    s = re.sub(r"\*\*\*(.+?)\*\*\*", r"<b><i>\1</i></b>", s)
+    s = re.sub(r"\*\*(.+?)\*\*", r"<b>\1</b>", s)
+    s = re.sub(r"(?<!\w)\*(?!\s)(.+?)(?<!\s)\*(?!\w)", r"<i>\1</i>", s)
+    s = re.sub(r"__(.+?)__", r"<b>\1</b>", s)
+    s = re.sub(r"`(.+?)`", r"<font face='Courier'>\1</font>", s)
+    s = s.replace("**", "").replace("##", "")  # stray leftovers
+    return s
 
 
-# ── PDF GENERATION ────────────────────────────────────────────────────────────
+def clean_title(s):
+    """Strip all markdown decoration from a heading."""
+    return re.sub(r"[#*_`]+", "", s).strip(" :–-\t")
+
+
+HEADING_RE = [
+    re.compile(r"^#{1,6}\s+(.+)$"),                  # ## Heading
+    re.compile(r"^\*\*([^*]+)\*\*:?\s*$"),           # **Heading**
+    re.compile(r"^\d+\.\s+\*\*([^*]+)\*\*:?\s*$"),   # 3. **Heading**
+    re.compile(r"^\d+\.\s+([A-Z][A-Za-z &/()'\-]{2,50}):?\s*$"),  # 3. Heading
+]
+
+
 def parse_sections(text):
-    import re
-    sections = []
-    title = "Overview"
-    body = []
+    sections, title, body = [], "Overview", []
     for line in text.splitlines():
-        m = re.match(r'^(?:#+\s*|(\d+)\.\s+)(.+)$', line)
-        if m:
-            if body:
+        stripped = line.strip()
+        matched = None
+        for rx in HEADING_RE:
+            m = rx.match(stripped)
+            if m:
+                matched = m.group(1)
+                break
+        if matched is not None:
+            if body and any(b.strip() for b in body):
                 sections.append((title, "\n".join(body).strip()))
-            title = (m.group(2) or m.group(0)).strip()
-            body = []
+            title, body = clean_title(matched), []
         else:
             body.append(line)
-    if body:
+    if body and any(b.strip() for b in body):
         sections.append((title, "\n".join(body).strip()))
     return sections
 
 
+# ── SOURCE PAGE SCREENSHOTS ───────────────────────────────────────────────────
+def find_doc(fp):
+    """Resolve a node file path against the docs folder."""
+    if os.path.isabs(fp) and os.path.exists(fp):
+        return fp
+    cand = os.path.join("docs", fp)
+    if os.path.exists(cand):
+        return cand
+    name = os.path.basename(fp)
+    for root, _, files in os.walk("docs"):
+        if name in files:
+            return os.path.join(root, name)
+    return None
+
+
+def extract_page_screenshots(source_nodes, max_shots=4, zoom=2.0):
+    """Render full-page screenshots of the source pages the answer drew on."""
+    shots, seen = [], set()
+    for node in source_nodes:
+        meta = node.metadata or {}
+        fp = find_doc(meta.get("file_path") or meta.get("file_name", ""))
+        if not fp:
+            continue
+        try:
+            page_num = int(str(meta.get("page_label", meta.get("page", 1)))) - 1
+        except (TypeError, ValueError):
+            page_num = 0
+        name = os.path.basename(fp)
+        key = (name, page_num)
+        if key in seen:
+            continue
+        seen.add(key)
+        try:
+            pdf_doc = fitz.open(fp)
+            page = pdf_doc[max(0, min(page_num, len(pdf_doc) - 1))]
+            pix = page.get_pixmap(matrix=fitz.Matrix(zoom, zoom))
+            pil = PILImage.open(io.BytesIO(pix.tobytes("png"))).convert("RGB")
+            buf = io.BytesIO()
+            pil.save(buf, format="JPEG", quality=82)
+            shots.append({
+                "bytes": buf.getvalue(),
+                "source": name,
+                "page": page_num + 1,
+            })
+            pdf_doc.close()
+        except Exception:
+            continue
+        if len(shots) >= max_shots:
+            break
+    return shots
+
+
+def format_sources(source_nodes):
+    """Build a deduplicated reference list from the retrieved nodes."""
+    seen, lines = set(), []
+    for node in source_nodes:
+        meta = node.metadata or {}
+        name = os.path.basename(meta.get("file_name") or meta.get("file_path", ""))
+        if not name:
+            continue
+        page = meta.get("page_label") or meta.get("page")
+        key = (name, str(page))
+        if key in seen:
+            continue
+        seen.add(key)
+        lines.append(f"- {name}" + (f", page {page}" if page else ""))
+    return "\n".join(lines)
+
+
+# ── PDF GENERATION ────────────────────────────────────────────────────────────
 def build_pdf(text, images, grade, subject, term, week, duration, teacher, school):
     buf = io.BytesIO()
     doc = SimpleDocTemplate(buf, pagesize=A4,
@@ -186,8 +336,6 @@ def build_pdf(text, images, grade, subject, term, week, duration, teacher, schoo
     footer_s   = ParagraphStyle("foot", fontName="Helvetica", fontSize=7,
                                 textColor=rl_grey, alignment=TA_CENTER)
     title_s    = ParagraphStyle("ttl", fontName="Helvetica-Bold", fontSize=20,
-                                textColor=colors.white, alignment=TA_CENTER)
-    sub_s      = ParagraphStyle("sub", fontName="Helvetica", fontSize=10,
                                 textColor=colors.white, alignment=TA_CENTER)
 
     W, _ = A4
@@ -232,21 +380,21 @@ def build_pdf(text, images, grade, subject, term, week, duration, teacher, schoo
     story.append(mt)
     story.append(Spacer(1, 0.5*cm))
 
-    # Distribute images across body sections
+    # Distribute screenshots across body sections
     sections = parse_sections(text)
     img_map = {}
-    if images:
-        body_idxs = [i for i in range(2, len(sections) - 1)]
+    if images and len(sections) > 2:
+        body_idxs = list(range(1, len(sections)))
         step = max(1, len(body_idxs) // len(images))
         for k, img_data in enumerate(images):
             idx = body_idxs[min(k * step, len(body_idxs) - 1)]
-            img_map[idx] = img_data
+            img_map.setdefault(idx, img_data)
 
     for i, (sec_title, sec_body) in enumerate(sections):
         if not sec_title and not sec_body:
             continue
         # Heading with orange left bar
-        ht = Table([[Paragraph(sec_title.upper(), heading_style)]], colWidths=[cw])
+        ht = Table([[Paragraph(clean_title(sec_title).upper(), heading_style)]], colWidths=[cw])
         ht.setStyle(TableStyle([
             ("LINEBEFORE",    (0,0), (0,0), 3, rl_orange),
             ("LEFTPADDING",   (0,0), (0,0), 10),
@@ -261,34 +409,37 @@ def build_pdf(text, images, grade, subject, term, week, duration, teacher, schoo
             if not line:
                 story.append(Spacer(1, 3))
             elif line.startswith(("- ", "* ", "• ")):
-                story.append(Paragraph("• " + line[2:], bullet_style))
-            elif len(line) > 2 and line[0].isdigit() and line[1] == ".":
-                story.append(Paragraph(line, bullet_style))
+                story.append(Paragraph("• " + md_inline(line[2:]), bullet_style))
+            elif re.match(r"^\d+\.\s", line):
+                story.append(Paragraph(md_inline(line), bullet_style))
             else:
-                story.append(Paragraph(line, body_style))
+                story.append(Paragraph(md_inline(line), body_style))
 
-        # Embed image if assigned to this section
+        # Embed screenshot if assigned to this section
         if i in img_map:
             try:
                 img_data = img_map[i]
                 img_buf = io.BytesIO(img_data["bytes"])
                 pil_img = PILImage.open(img_buf)
                 ow, oh = pil_img.size
-                max_w = cw * 0.42
-                scale = min(max_w / ow, (4.5*cm) / oh)
+                max_w = cw * 0.55
+                scale = min(max_w / ow, (7*cm) / oh)
                 dw, dh = ow * scale, oh * scale
                 img_buf.seek(0)
                 rl_img = RLImage(img_buf, width=dw, height=dh)
-                cap_p = Paragraph(f"Source: {img_data['source']} p.{img_data['page']}", caption)
+                cap_p = Paragraph(
+                    f"Source: {img_data['source']}, p.{img_data['page']}", caption)
                 img_tbl = Table([[rl_img], [cap_p]], colWidths=[dw])
                 img_tbl.setStyle(TableStyle([
                     ("ALIGN", (0,0), (-1,-1), "CENTER"),
+                    ("BOX", (0,0), (0,0), 0.5, colors.HexColor("#CBD5E1")),
                     ("TOPPADDING", (0,0), (-1,-1), 3),
                     ("BOTTOMPADDING", (0,0), (-1,-1), 3),
                 ]))
-                layout = Table([["", img_tbl]], colWidths=[cw - dw - 0.5*cm, dw + 0.5*cm])
-                layout.setStyle(TableStyle([("VALIGN", (0,0), (-1,-1), "TOP")]))
-                story.append(layout)
+                wrap = Table([[img_tbl]], colWidths=[cw])
+                wrap.setStyle(TableStyle([("ALIGN", (0,0), (-1,-1), "CENTER")]))
+                story.append(Spacer(1, 0.2*cm))
+                story.append(wrap)
             except Exception:
                 pass
 
@@ -308,39 +459,38 @@ def build_pdf(text, images, grade, subject, term, week, duration, teacher, schoo
 # SIDEBAR
 # ═══════════════════════════════════════════════════════════════════════════════
 with st.sidebar:
-    st.markdown("## 🤖 Cubroid LMS")
+    st.markdown(f"## 🤖 Cubroid LMS")
+    st.caption(f"Foundation Phase • {SUBJECT}")
     st.markdown("---")
     mode_choice = st.radio("Mode", ["📋 Lesson Planner", "🔧 Troubleshooting"],
                            label_visibility="collapsed")
     st.session_state.mode = "lesson" if "Lesson" in mode_choice else "troubleshoot"
 
     if st.session_state.mode == "lesson":
-        st.markdown("### 📐 Class Details")
-        grades = ["Grade 4","Grade 5","Grade 6","Grade 7","Grade 8","Grade 9"]
+        st.markdown("##### Class details")
         st.session_state.grade = st.selectbox(
-            "Grade", grades, index=grades.index(st.session_state.grade))
-        subjects = ["Technology","Natural Sciences","Mathematics","Life Skills"]
-        st.session_state.subject = st.selectbox("Subject", subjects)
-        robots = ["Cuboid Mini","Cuboid Pro","Cuboid Starter"]
-        st.session_state.robot = st.selectbox("Robot", robots)
-        st.session_state.term = st.selectbox("Term", [1,2,3,4],
+            "Grade", GRADES, index=GRADES.index(st.session_state.grade))
+        robots = ["Cubroid Coding Blocks", "Cubroid Artibo"]
+        st.session_state.robot = st.selectbox("Robot kit", robots)
+        st.session_state.term = st.selectbox("Term", [1, 2, 3, 4],
                                              index=st.session_state.term - 1)
         st.session_state.week = st.number_input("Week", min_value=1, max_value=10,
                                                 value=st.session_state.week)
-        st.session_state.duration = st.selectbox("Duration", ["45 minutes","60 minutes"])
+        st.session_state.duration = st.selectbox(
+            "Duration", ["30 minutes", "45 minutes", "60 minutes"])
 
-        st.markdown("### 👤 Teacher Info")
+        st.markdown("##### Teacher info")
         st.session_state.teacher_name = st.text_input(
-            "Teacher Name", value=st.session_state.teacher_name)
+            "Teacher name", value=st.session_state.teacher_name)
         st.session_state.school_name = st.text_input(
-            "School Name", value=st.session_state.school_name)
+            "School name", value=st.session_state.school_name)
 
-        st.markdown("### 📝 Custom Notes")
+        st.markdown("##### Notes")
         st.session_state.custom_notes = st.text_area(
             "Extra context for the AI",
             value=st.session_state.custom_notes,
             placeholder="e.g. Class has 25 learners, focus on teamwork...",
-            height=100,
+            height=90,
         )
         st.markdown("---")
         if st.button("✨ Generate Lesson Plan", type="primary", use_container_width=True):
@@ -353,13 +503,6 @@ with st.sidebar:
 # ═══════════════════════════════════════════════════════════════════════════════
 # MAIN AREA
 # ═══════════════════════════════════════════════════════════════════════════════
-st.markdown("""
-<div class="app-header">
-  <h1>Cubroid Lesson Generator</h1>
-  <p>AI-powered lesson plans grounded in Cubroid curriculum documents</p>
-</div>
-""", unsafe_allow_html=True)
-st.markdown("---")
 
 # ── LESSON PLANNER ────────────────────────────────────────────────────────────
 if st.session_state.mode == "lesson":
@@ -369,76 +512,109 @@ if st.session_state.mode == "lesson":
         notes_line = (f"Additional teacher notes: {st.session_state.custom_notes}"
                       if st.session_state.custom_notes else "")
         prompt = f"""
-        Create a fully structured {st.session_state.duration} lesson plan for
-        {st.session_state.grade}, Term {st.session_state.term},
-        Week {st.session_state.week}. Subject: {st.session_state.subject}.
-        Robot used: {st.session_state.robot}. {notes_line}
+        Create a fully structured {st.session_state.duration} CAPS-aligned
+        {SUBJECT} lesson plan for {st.session_state.grade} (South African
+        Foundation Phase), Term {st.session_state.term},
+        Week {st.session_state.week}. Robot used: {st.session_state.robot}.
+        {notes_line}
 
-        Structure it with these exact sections:
-        1. Header (grade, subject, term, week, duration, CAPS alignment)
-        2. Learning Objectives (3 bullet points)
-        3. Introduction / Hook (5 min)
-        4. Direct Instruction (10 min)
-        5. Guided Practice (15 min)
-        6. Independent / Group Task (10 min)
-        7. Wrap-up & Assessment (5 min)
-        8. Resources Required
-        9. Differentiation (support strategies + extension activities)
+        You have three kinds of source documents:
+        1. The CAPS curriculum document ("{CAPS_DOC}") — use it for curriculum
+           alignment: name the specific content area, topic and skills for this
+           grade and term.
+        2. The Cubroid {TEACHER_GUIDE} — use these for the actual lesson
+           activities. You MUST state exactly which Step 1 Book (and pages,
+           if available) the activities come from.
+        3. The Mission Guide ("{MISSION_GUIDE}") — use it ONLY for the
+           "Further Work / Extension" section.
 
+        Format the output in markdown. Use "## " for every section heading
+        (no bold-only headings, no numbered headings). Use "- " for bullets.
+        Produce exactly these sections:
+
+        ## CAPS Alignment
+        ## Learning Objectives
+        ## Introduction / Hook (5 min)
+        ## Direct Instruction (10 min)
+        ## Guided Practice (15 min)
+        ## Independent / Group Task (10 min)
+        ## Wrap-up & Assessment (5 min)
+        ## Resources Required
+        ## Differentiation
+        ## Teacher Guide Reference
+        ## Further Work (Mission Guide)
+
+        In "Teacher Guide Reference", list the specific Step 1 Book(s) and
+        pages the lesson draws on, so the teacher can refer back to the book.
+        Keep activities age-appropriate for {st.session_state.grade}.
         Use only information from the provided documents.
         If something is not covered in the documents, say so.
         """
-        with st.spinner("✨ Generating lesson plan and pulling images from source docs..."):
-            engine = index.as_query_engine(similarity_top_k=6)
+        with st.spinner("Generating lesson plan and capturing source pages..."):
+            engine = index.as_query_engine(similarity_top_k=8)
             response = engine.query(prompt)
-            st.session_state.result = str(response)
-            st.session_state.images = extract_images_from_nodes(response.source_nodes)
+            result_text = str(response)
+            sources_md = format_sources(response.source_nodes)
+            if sources_md:
+                result_text += f"\n\n## Source Documents\n{sources_md}"
+            st.session_state.result = result_text
+            st.session_state.images = extract_page_screenshots(response.source_nodes)
         st.session_state.step = 1
         st.rerun()
 
-    # Idle state — preview
+    # Idle state — landing page
     if st.session_state.result is None:
-        st.markdown("### 📋 What will be generated")
         st.markdown(f"""
-        <div class="section-card">
-          <h4>📐 Class Configuration</h4>
-          <b>{st.session_state.grade}</b> &nbsp;|&nbsp;
-          <b>{st.session_state.subject}</b> &nbsp;|&nbsp;
-          Term {st.session_state.term}, Week {st.session_state.week} &nbsp;|&nbsp;
-          {st.session_state.duration} &nbsp;|&nbsp;
-          {st.session_state.robot}
+        <div class="hero">
+          <div class="badge">Foundation Phase &nbsp;•&nbsp; CAPS Aligned</div>
+          <h1>Cubroid <span>Lesson Generator</span></h1>
+          <p>Polished, print-ready {SUBJECT} lesson plans for Grade R–3 —
+          grounded in the CAPS curriculum, Step 1 Teacher Guides and
+          Mission Guides, with source-page screenshots included.</p>
+        </div>
+        <div class="pill-row">
+          <span class="pill"><b>{st.session_state.grade}</b></span>
+          <span class="pill">{SUBJECT}</span>
+          <span class="pill">Term <b>{st.session_state.term}</b> · Week <b>{st.session_state.week}</b></span>
+          <span class="pill">{st.session_state.duration}</span>
+          <span class="pill">{st.session_state.robot}</span>
         </div>
         """, unsafe_allow_html=True)
 
         preview_sections = [
-            ("🎯", "Learning Objectives",     "3 curriculum-aligned objectives"),
-            ("🔥", "Introduction / Hook",     "~5 min engaging opener"),
-            ("📖", "Direct Instruction",      "~10 min concept delivery"),
-            ("🤝", "Guided Practice",         "~15 min teacher-led activity"),
-            ("🧪", "Independent / Group Task", f"~10 min learner task with {st.session_state.robot}"),
-            ("✅", "Wrap-up & Assessment",    "~5 min reflection + check"),
-            ("📦", "Resources Required",      "Full materials list"),
-            ("♿", "Differentiation",         "Support + extension strategies"),
+            ("CAPS Alignment",          f"Content area, topic & skills from the official CAPS {SUBJECT} document"),
+            ("Learning Objectives",     "Three curriculum-aligned objectives for the lesson"),
+            ("Lesson Flow",             "Hook, direct instruction, guided practice, group task and wrap-up — fully timed"),
+            ("Teacher Guide Reference", "The exact Step 1 Book and pages the activities come from"),
+            ("Further Work",            "Extension activities drawn from the Cubroid Mission Guide"),
+            ("Source Screenshots",      "Page images captured from the actual curriculum and guide documents"),
         ]
         cols = st.columns(2)
-        for idx, (icon, title, desc) in enumerate(preview_sections):
+        for idx, (title, desc) in enumerate(preview_sections):
             with cols[idx % 2]:
                 st.markdown(f"""
-                <div class="section-card">
-                  <h4>{icon} {title}</h4>
-                  <span style="color:{CUBROID_GREY};font-size:0.85rem">{desc}</span>
+                <div class="card">
+                  <h4><span class="num">{idx + 1}</span>{title}</h4>
+                  <p>{desc}</p>
                 </div>
                 """, unsafe_allow_html=True)
 
+        st.markdown(f"""
+        <div class="sources">
+          <b>Knowledge base</b> &nbsp;—&nbsp; {CAPS_DOC} (Curriculum)
+          &nbsp;·&nbsp; {TEACHER_GUIDE} &nbsp;·&nbsp; {MISSION_GUIDE}
+        </div>
+        """, unsafe_allow_html=True)
+
         if st.session_state.custom_notes:
             st.markdown(f"""
-            <div class="section-card" style="border-left-color:{CUBROID_BLUE}">
-              <h4>📝 Your Custom Notes</h4>
-              <span style="font-size:0.9rem">{st.session_state.custom_notes}</span>
+            <div class="card" style="margin-top:14px">
+              <h4>Your notes</h4>
+              <p>{st.session_state.custom_notes}</p>
             </div>
             """, unsafe_allow_html=True)
 
-        st.info("👈  Adjust settings in the sidebar, then click **✨ Generate Lesson Plan**")
+        st.info("👈  Set the class details in the sidebar, then click **Generate Lesson Plan**")
 
     # Result state
     else:
@@ -446,12 +622,13 @@ if st.session_state.mode == "lesson":
 
         if st.session_state.images:
             with st.expander(
-                f"🖼️ {len(st.session_state.images)} images pulled from source documents",
+                f"🖼️ {len(st.session_state.images)} source-page screenshots "
+                "(included in the PDF)",
                 expanded=False
             ):
                 img_cols = st.columns(min(len(st.session_state.images), 4))
                 for i, img_data in enumerate(st.session_state.images):
-                    with img_cols[i]:
+                    with img_cols[i % len(img_cols)]:
                         st.image(img_data["bytes"],
                                  caption=f"{img_data['source']} p.{img_data['page']}",
                                  use_container_width=True)
@@ -466,7 +643,7 @@ if st.session_state.mode == "lesson":
                 st.session_state.result,
                 st.session_state.images,
                 st.session_state.grade,
-                st.session_state.subject,
+                SUBJECT,
                 st.session_state.term,
                 st.session_state.week,
                 st.session_state.duration,
@@ -502,7 +679,7 @@ else:
     st.markdown("Describe a problem and get step-by-step guidance from the official Cubroid guides.")
     question = st.text_area(
         "What is the problem?",
-        placeholder="e.g. The Cuboid Mini won't connect to the tablet via Bluetooth",
+        placeholder="e.g. The Cubroid blocks won't connect to the tablet via Bluetooth",
         height=120,
     )
     if st.button("🔍 Find Solution", type="primary"):
