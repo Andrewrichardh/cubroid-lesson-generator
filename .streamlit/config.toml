@@ -1,0 +1,17 @@
+# Cubroid Lesson Generator — theme configuration
+# Streamlit picks light or dark automatically from the user's device,
+# and users can override it via the app menu (☰ → Settings → Theme).
+
+[theme]
+base = "light"
+primaryColor = "#1E3A8A"
+backgroundColor = "#FFFFFF"
+secondaryBackgroundColor = "#F1F5F9"
+textColor = "#0F172A"
+
+[theme.dark]
+base = "dark"
+primaryColor = "#7C9CFF"
+backgroundColor = "#0E1117"
+secondaryBackgroundColor = "#1A2230"
+textColor = "#E6EAF2"
