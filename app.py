@@ -62,9 +62,15 @@ openai.api_key = st.secrets["OPENAI_API_KEY"]
 Settings.llm = OpenAI(model="gpt-4o-mini", api_key=st.secrets["OPENAI_API_KEY"])
 Settings.embed_model = OpenAIEmbedding(api_key=st.secrets["OPENAI_API_KEY"])
 
+from llama_parse import LlamaParse
+
 @st.cache_resource(show_spinner="Loading knowledge base...")
 def load_index():
-    docs = SimpleDirectoryReader("docs", recursive=True).load_data()
+    parser = LlamaParse(
+        api_key=st.secrets["llx-640ulN0pgNuumU8IqrW68PT9mzcZbqX9KhknqMCiNKOD4kKZ"],
+        result_type="markdown"
+    )
+    docs = SimpleDirectoryReader("docs", file_extractor={".pdf": parser}).load_data()
     return VectorStoreIndex.from_documents(docs)
 
 index = load_index()
