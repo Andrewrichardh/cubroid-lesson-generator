@@ -7,3 +7,4 @@ openai
 PyMuPDF
 reportlab
 Pillow
+llama-parse
