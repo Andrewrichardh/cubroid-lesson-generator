@@ -1,4 +1,4 @@
-import streamlit as st  # Cubroid Lesson Generator v4
+import streamlit as st  # Cubroid Lesson Generator v5
 import openai
 import os
 import io
@@ -204,40 +204,113 @@ def find_doc(fp):
     return None
 
 
-def extract_page_screenshots(source_nodes, max_shots=6, zoom=2.0):
-    """Render full-page screenshots of the source pages the answer drew on."""
+def render_page(fp, page_idx, zoom=2.0):
+    """Render one page (0-based index) of a PDF to JPEG bytes."""
+    pdf_doc = fitz.open(fp)
+    page_idx = max(0, min(page_idx, len(pdf_doc) - 1))
+    page = pdf_doc[page_idx]
+    pix = page.get_pixmap(matrix=fitz.Matrix(zoom, zoom))
+    pil = PILImage.open(io.BytesIO(pix.tobytes("png"))).convert("RGB")
+    buf = io.BytesIO()
+    pil.save(buf, format="JPEG", quality=82)
+    pdf_doc.close()
+    return buf.getvalue(), page_idx
+
+
+def best_page_for_text(fp, content, skip_first=True):
+    """Find the page (0-based) whose text best matches the given content.
+    Used when retrieval metadata has no reliable page number."""
+    needles = []
+    for line in content.splitlines():
+        line = re.sub(r"[#*_`|]+", "", line).strip().lower()
+        if len(line) >= 20:
+            needles.append(line[:50])
+        if len(needles) >= 10:
+            break
+    if not needles:
+        return None
+    try:
+        pdf_doc = fitz.open(fp)
+    except Exception:
+        return None
+    best, best_score = None, 0
+    start = 1 if (skip_first and len(pdf_doc) > 2) else 0
+    for pno in range(start, len(pdf_doc)):
+        ptext = pdf_doc[pno].get_text().lower()
+        ptext = re.sub(r"\s+", " ", ptext)
+        score = sum(1 for n in needles if re.sub(r"\s+", " ", n) in ptext)
+        if score > best_score:
+            best, best_score = pno, score
+    pdf_doc.close()
+    return best
+
+
+# Patterns that find page citations in the generated lesson text,
+# e.g. "(Step1 Book 3, p.12)", "(Mission Guide, p.7)", "(CAPS, p.14)"
+PAGE_REF = r"(?:pages?|pg\.?|pp\.?|p\.)\s*(\d+)"
+CITATION_PATTERNS = [
+    (re.compile(r"step\s*1?\s*book\s*(\d+)[^\n.;)]*?" + PAGE_REF, re.I),
+     lambda m: (f"Step1 Book {m.group(1)}.pdf", int(m.group(2)))),
+    (re.compile(r"mission[^\n.;)]*?" + PAGE_REF, re.I),
+     lambda m: (MISSION_GUIDE, int(m.group(1)))),
+    (re.compile(r"caps[^\n.;)]*?" + PAGE_REF, re.I),
+     lambda m: (CAPS_DOC, int(m.group(1)))),
+]
+
+
+def extract_page_screenshots(source_nodes, result_text="", max_shots=6, zoom=2.0):
+    """Screenshot the exact pages the lesson plan cites, plus the pages the
+    retrieved content actually lives on. Never cover pages."""
     shots, seen = [], set()
+
+    def add(fname, page_1based):
+        if len(shots) >= max_shots:
+            return
+        fp = find_doc(fname)
+        if not fp:
+            return
+        name = os.path.basename(fp)
+        key = (name.lower(), page_1based)
+        if key in seen:
+            return
+        try:
+            data, used_idx = render_page(fp, page_1based - 1, zoom)
+        except Exception:
+            return
+        seen.add(key)
+        seen.add((name.lower(), used_idx + 1))
+        shots.append({"bytes": data, "source": name, "page": used_idx + 1})
+
+    # 1) Pages explicitly cited in the lesson text (most relevant)
+    for rx, getter in CITATION_PATTERNS:
+        for m in rx.finditer(result_text):
+            fname, pg = getter(m)
+            if pg > 1:
+                add(fname, pg)
+
+    # 2) Pages where the retrieved content actually lives
     for node in source_nodes:
-        meta = node.metadata or {}
+        if len(shots) >= max_shots:
+            break
+        n = getattr(node, "node", node)
+        meta = getattr(n, "metadata", None) or {}
         fp = find_doc(meta.get("file_path") or meta.get("file_name", ""))
         if not fp:
             continue
+        page = None
         try:
-            page_num = int(str(meta.get("page_label", meta.get("page", 1)))) - 1
+            page = int(str(meta.get("page_label") or meta.get("page")))
         except (TypeError, ValueError):
-            page_num = 0
-        name = os.path.basename(fp)
-        key = (name, page_num)
-        if key in seen:
-            continue
-        seen.add(key)
-        try:
-            pdf_doc = fitz.open(fp)
-            page = pdf_doc[max(0, min(page_num, len(pdf_doc) - 1))]
-            pix = page.get_pixmap(matrix=fitz.Matrix(zoom, zoom))
-            pil = PILImage.open(io.BytesIO(pix.tobytes("png"))).convert("RGB")
-            buf = io.BytesIO()
-            pil.save(buf, format="JPEG", quality=82)
-            shots.append({
-                "bytes": buf.getvalue(),
-                "source": name,
-                "page": page_num + 1,
-            })
-            pdf_doc.close()
-        except Exception:
-            continue
-        if len(shots) >= max_shots:
-            break
+            page = None
+        if page is None or page <= 1:
+            try:
+                content = n.get_content()
+            except Exception:
+                content = ""
+            pno = best_page_for_text(fp, content)
+            page = (pno + 1) if pno is not None else None
+        if page and page > 1:
+            add(os.path.basename(fp), page)
     return shots
 
 
@@ -463,6 +536,12 @@ def generate_lesson_plan():
       learners do, and roughly how many minutes it takes.
     - Wherever an activity comes from a teacher guide, cite it in-line in
       brackets, e.g. (Step1 Book 3, p.12).
+    - EVERY reference to a source document must include a page number:
+      (Step1 Book 3, p.12), (Mission Guide, p.7), (CAPS, p.14). Use the page
+      numbers that appear in the retrieved content. Never cite a document
+      without a page number.
+    - Describe what the blocks/components in use look like (colour, shape,
+      symbol) so the teacher can identify them, as described in the guide.
     - Include practical management detail: how to hand out the blocks, group
       sizes, what a finished example looks like, common mistakes to watch for.
 
@@ -494,6 +573,8 @@ def generate_lesson_plan():
 
     In "Teacher Guide Reference", list the specific Step 1 Book(s) and
     pages the lesson draws on, so the teacher can refer back to the book.
+    In "Further Work (Mission Guide)", cite the exact Mission Guide pages,
+    e.g. (Mission Guide, p.7).
     Keep activities age-appropriate for {st.session_state.grade}.
     Use only information from the provided documents.
     If something is not covered in the documents, say so.
@@ -505,7 +586,8 @@ def generate_lesson_plan():
     if sources_md:
         result_text += f"\n\n## Source Documents\n{sources_md}"
     st.session_state.result = result_text
-    st.session_state.images = extract_page_screenshots(response.source_nodes)
+    st.session_state.images = extract_page_screenshots(
+        response.source_nodes, result_text)
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
