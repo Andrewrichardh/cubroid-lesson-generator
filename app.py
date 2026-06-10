@@ -1,4 +1,4 @@
-import streamlit as st  # Cubroid Lesson Generator v5
+import streamlit as st  # Cubroid Lesson Generator v6
 import openai
 import os
 import io
@@ -468,32 +468,46 @@ def build_pdf(text, images, grade, subject, term, week, duration, teacher, schoo
             else:
                 story.append(Paragraph(md_inline(line), body_style))
 
-        # Embed screenshots assigned to this section
-        for img_data in img_map.get(i, []):
-            try:
-                img_buf = io.BytesIO(img_data["bytes"])
-                pil_img = PILImage.open(img_buf)
-                ow, oh = pil_img.size
-                max_w = cw * 0.55
-                scale = min(max_w / ow, (7*cm) / oh)
-                dw, dh = ow * scale, oh * scale
-                img_buf.seek(0)
-                rl_img = RLImage(img_buf, width=dw, height=dh)
-                cap_p = Paragraph(
-                    f"Source: {img_data['source']}, p.{img_data['page']}", caption)
-                img_tbl = Table([[rl_img], [cap_p]], colWidths=[dw])
-                img_tbl.setStyle(TableStyle([
-                    ("ALIGN", (0,0), (-1,-1), "CENTER"),
-                    ("BOX", (0,0), (0,0), 0.5, colors.HexColor("#CBD5E1")),
-                    ("TOPPADDING", (0,0), (-1,-1), 3),
+        # Embed screenshots assigned to this section — compact, 2 per row
+        sec_imgs = img_map.get(i, [])
+        if sec_imgs:
+            cells = []
+            cell_w = (cw / 2) - 0.4*cm
+            for img_data in sec_imgs:
+                try:
+                    img_buf = io.BytesIO(img_data["bytes"])
+                    pil_img = PILImage.open(img_buf)
+                    ow, oh = pil_img.size
+                    scale = min((cell_w - 0.3*cm) / ow, (5.5*cm) / oh)
+                    dw, dh = ow * scale, oh * scale
+                    img_buf.seek(0)
+                    rl_img = RLImage(img_buf, width=dw, height=dh)
+                    cap_p = Paragraph(
+                        f"Source: {img_data['source']}, p.{img_data['page']}", caption)
+                    cell = Table([[rl_img], [cap_p]], colWidths=[dw + 0.2*cm])
+                    cell.setStyle(TableStyle([
+                        ("ALIGN",         (0,0), (-1,-1), "CENTER"),
+                        ("VALIGN",        (0,0), (-1,-1), "MIDDLE"),
+                        ("BOX",           (0,0), (0,0), 0.5, colors.HexColor("#CBD5E1")),
+                        ("TOPPADDING",    (0,0), (-1,-1), 2),
+                        ("BOTTOMPADDING", (0,0), (-1,-1), 2),
+                    ]))
+                    cells.append(cell)
+                except Exception:
+                    continue
+            for r in range(0, len(cells), 2):
+                row = cells[r:r + 2]
+                if len(row) == 1:
+                    rt = Table([row], colWidths=[cw])
+                else:
+                    rt = Table([row], colWidths=[cw/2, cw/2])
+                rt.setStyle(TableStyle([
+                    ("ALIGN",         (0,0), (-1,-1), "CENTER"),
+                    ("VALIGN",        (0,0), (-1,-1), "TOP"),
+                    ("TOPPADDING",    (0,0), (-1,-1), 3),
                     ("BOTTOMPADDING", (0,0), (-1,-1), 3),
                 ]))
-                wrap = Table([[img_tbl]], colWidths=[cw])
-                wrap.setStyle(TableStyle([("ALIGN", (0,0), (-1,-1), "CENTER")]))
-                story.append(Spacer(1, 0.2*cm))
-                story.append(wrap)
-            except Exception:
-                pass
+                story.append(rt)
 
         story.append(Spacer(1, 0.2*cm))
 
