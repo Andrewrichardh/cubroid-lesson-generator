@@ -1,4 +1,4 @@
-import streamlit as st  # Cubroid Lesson Generator v3
+import streamlit as st  # Cubroid Lesson Generator v4
 import openai
 import os
 import io
@@ -105,7 +105,8 @@ st.markdown("""
 
 # ── OpenAI / LlamaIndex setup ─────────────────────────────────────────────────
 openai.api_key = st.secrets["OPENAI_API_KEY"]
-Settings.llm = OpenAI(model="gpt-4o-mini", api_key=st.secrets["OPENAI_API_KEY"])
+Settings.llm = OpenAI(model="gpt-4o-mini", api_key=st.secrets["OPENAI_API_KEY"],
+                      max_tokens=4000)
 Settings.embed_model = OpenAIEmbedding(api_key=st.secrets["OPENAI_API_KEY"])
 
 @st.cache_resource(show_spinner="Getting things ready for you...")
@@ -164,7 +165,6 @@ HEADING_RE = [
     re.compile(r"^#{1,6}\s+(.+)$"),                  # ## Heading
     re.compile(r"^\*\*([^*]+)\*\*:?\s*$"),           # **Heading**
     re.compile(r"^\d+\.\s+\*\*([^*]+)\*\*:?\s*$"),   # 3. **Heading**
-    re.compile(r"^\d+\.\s+([A-Z][A-Za-z &/()'\-]{2,50}):?\s*$"),  # 3. Heading
 ]
 
 
@@ -204,7 +204,7 @@ def find_doc(fp):
     return None
 
 
-def extract_page_screenshots(source_nodes, max_shots=4, zoom=2.0):
+def extract_page_screenshots(source_nodes, max_shots=6, zoom=2.0):
     """Render full-page screenshots of the source pages the answer drew on."""
     shots, seen = [], set()
     for node in source_nodes:
@@ -239,6 +239,45 @@ def extract_page_screenshots(source_nodes, max_shots=4, zoom=2.0):
         if len(shots) >= max_shots:
             break
     return shots
+
+
+# Map each screenshot to the lesson section it belongs with, based on which
+# source document it came from.
+SECTION_HINTS = [
+    ("caps",    ["caps alignment"]),
+    ("mission", ["further work", "mission"]),
+    ("step",    ["guided practice", "direct instruction",
+                 "independent", "teacher guide reference"]),
+]
+
+
+def assign_images(sections, images):
+    """Return {section_index: [images]} placing each screenshot under the
+    section that matches its source document type."""
+    titles = [t.lower() for t, _ in sections]
+    img_map, used = {}, set()
+
+    def find_section(hints, allow_reuse):
+        for h in hints:
+            for idx, t in enumerate(titles):
+                if h in t and (allow_reuse or idx not in used):
+                    return idx
+        return None
+
+    for img in images:
+        src = img["source"].lower()
+        target = None
+        for key, hints in SECTION_HINTS:
+            if key in src:
+                target = find_section(hints, allow_reuse=False)
+                if target is None:
+                    target = find_section(hints, allow_reuse=True)
+                break
+        if target is None:
+            target = len(sections) - 1
+        used.add(target)
+        img_map.setdefault(target, []).append(img)
+    return img_map
 
 
 def format_sources(source_nodes):
@@ -327,15 +366,9 @@ def build_pdf(text, images, grade, subject, term, week, duration, teacher, schoo
     story.append(mt)
     story.append(Spacer(1, 0.5*cm))
 
-    # Distribute screenshots across body sections
+    # Place screenshots under their matching sections
     sections = parse_sections(text)
-    img_map = {}
-    if images and len(sections) > 2:
-        body_idxs = list(range(1, len(sections)))
-        step = max(1, len(body_idxs) // len(images))
-        for k, img_data in enumerate(images):
-            idx = body_idxs[min(k * step, len(body_idxs) - 1)]
-            img_map.setdefault(idx, img_data)
+    img_map = assign_images(sections, images) if images else {}
 
     for i, (sec_title, sec_body) in enumerate(sections):
         if not sec_title and not sec_body:
@@ -362,10 +395,9 @@ def build_pdf(text, images, grade, subject, term, week, duration, teacher, schoo
             else:
                 story.append(Paragraph(md_inline(line), body_style))
 
-        # Embed screenshot if assigned to this section
-        if i in img_map:
+        # Embed screenshots assigned to this section
+        for img_data in img_map.get(i, []):
             try:
-                img_data = img_map[i]
                 img_buf = io.BytesIO(img_data["bytes"])
                 pil_img = PILImage.open(img_buf)
                 ow, oh = pil_img.size
@@ -415,17 +447,38 @@ def generate_lesson_plan():
 
     You have three kinds of source documents:
     1. The CAPS curriculum document ("{CAPS_DOC}") — use it for curriculum
-       alignment: name the specific content area, topic and skills for this
-       grade and term.
+       alignment.
     2. The Cubroid {TEACHER_GUIDE} — use these for the actual lesson
-       activities. You MUST state exactly which Step 1 Book (and pages,
-       if available) the activities come from.
+       activities.
     3. The Mission Guide ("{MISSION_GUIDE}") — use it ONLY for the
        "Further Work / Extension" section.
 
+    LEVEL OF DETAIL — very important:
+    - Write for a Foundation Phase teacher who may never have used the robot
+      before. Nothing may be vague.
+    - Every lesson phase (Hook, Direct Instruction, Guided Practice,
+      Independent/Group Task, Wrap-up) must be a numbered sequence of
+      teacher steps. Each step must say: what the teacher does, what the
+      teacher says (give suggested wording in quotation marks), what the
+      learners do, and roughly how many minutes it takes.
+    - Wherever an activity comes from a teacher guide, cite it in-line in
+      brackets, e.g. (Step1 Book 3, p.12).
+    - Include practical management detail: how to hand out the blocks, group
+      sizes, what a finished example looks like, common mistakes to watch for.
+
+    CAPS ALIGNMENT — very important:
+    - Quote the specific study area, topic and skill CODES exactly as they
+      are numbered in the CAPS document (e.g. "C.1", "C.2.1", "R.1") for
+      {st.session_state.grade}, Term {st.session_state.term}.
+    - List each code on its own bullet: the code, its official title, then
+      one line on how this lesson addresses it.
+    - Only use codes that actually appear in the retrieved CAPS content. If
+      you cannot see the exact codes, name the topics instead and clearly
+      state that the code reference should be verified — never invent codes.
+
     Format the output in markdown. Use "## " for every section heading
-    (no bold-only headings, no numbered headings). Use "- " for bullets.
-    Produce exactly these sections:
+    (no bold-only headings, no numbered headings). Use "- " for bullets and
+    "1." numbering for teacher steps. Produce exactly these sections:
 
     ## CAPS Alignment
     ## Learning Objectives
@@ -445,7 +498,7 @@ def generate_lesson_plan():
     Use only information from the provided documents.
     If something is not covered in the documents, say so.
     """
-    engine = index.as_query_engine(similarity_top_k=8)
+    engine = index.as_query_engine(similarity_top_k=10)
     response = engine.query(prompt)
     result_text = str(response)
     sources_md = format_sources(response.source_nodes)
@@ -587,8 +640,8 @@ elif st.session_state.view == "result":
 
     if st.session_state.images:
         st.markdown("---")
-        st.markdown("##### 📎 Pages from your teacher guides (included in the PDF)")
-        img_cols = st.columns(min(len(st.session_state.images), 4))
+        st.markdown("##### 📎 Pages from your source documents (included in the PDF)")
+        img_cols = st.columns(min(len(st.session_state.images), 3))
         for i, img_data in enumerate(st.session_state.images):
             with img_cols[i % len(img_cols)]:
                 st.image(img_data["bytes"],
