@@ -1,4 +1,4 @@
-import streamlit as st  # Cubroid Lesson Generator v6
+import streamlit as st  # Cubroid Lesson Generator v7
 import openai
 import os
 import io
@@ -47,16 +47,28 @@ st.markdown("""
   html, body, [class*="css"] { font-family: 'Inter', sans-serif; }
 
   /* Hide Streamlit chrome */
-  #MainMenu, footer, header[data-testid="stHeader"] { visibility: hidden; height: 0; }
-  .block-container { padding-top: 3rem; max-width: 760px; }
+  #MainMenu, footer { visibility: hidden; height: 0; }
+  .block-container { padding-top: clamp(1.2rem, 4vw, 2.8rem); max-width: 760px; }
 
-  /* Hero */
-  .hero { text-align: center; padding: 2rem 1rem 1.5rem 1rem; }
+  :root { --cub-orange: #F97316; }
+
+  /* ── Hero ── */
+  .hero { text-align: center; padding: clamp(0.8rem, 3vw, 2rem) 0.5rem 1rem 0.5rem; }
+  .hero-logo {
+    width: clamp(56px, 14vw, 68px);
+    height: clamp(56px, 14vw, 68px);
+    border-radius: 20px;
+    background: linear-gradient(135deg, var(--primary-color, #1E3A8A) 0%, var(--cub-orange) 130%);
+    display: flex; align-items: center; justify-content: center;
+    font-size: clamp(1.7rem, 7vw, 2.1rem);
+    margin: 0 auto 1.1rem auto;
+    box-shadow: 0 10px 30px color-mix(in srgb, var(--primary-color, #1E3A8A) 30%, transparent);
+  }
   .hero .badge {
     display: inline-block;
-    background: #EFF6FF;
-    color: #1E3A8A;
-    border: 1px solid #BFDBFE;
+    background: color-mix(in srgb, var(--primary-color, #1E3A8A) 10%, transparent);
+    color: var(--primary-color, #1E3A8A);
+    border: 1px solid color-mix(in srgb, var(--primary-color, #1E3A8A) 30%, transparent);
     border-radius: 999px;
     padding: 4px 14px;
     font-size: 0.72rem;
@@ -66,40 +78,95 @@ st.markdown("""
     margin-bottom: 1rem;
   }
   .hero h1 {
-    color: #0F172A;
-    font-size: 2.3rem;
+    color: var(--text-color, #0F172A);
+    font-size: clamp(1.9rem, 6.5vw, 2.6rem);
     font-weight: 800;
     letter-spacing: -0.03em;
-    margin: 0 0 0.5rem 0;
-    line-height: 1.15;
+    margin: 0 0 0.55rem 0;
+    line-height: 1.12;
   }
-  .hero h1 span { color: #1E3A8A; }
+  .hero h1 .grad {
+    background: linear-gradient(90deg, var(--primary-color, #1E3A8A), var(--cub-orange));
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
   .hero p {
-    color: #64748B;
-    font-size: 1.02rem;
+    color: color-mix(in srgb, var(--text-color, #0F172A) 65%, transparent);
+    font-size: clamp(0.95rem, 3.5vw, 1.05rem);
     max-width: 480px;
     margin: 0 auto;
     line-height: 1.6;
   }
 
+  /* ── Feature chips ── */
+  .feature-row {
+    display: flex; flex-wrap: wrap; gap: 8px;
+    justify-content: center;
+    margin: 0.9rem 0 1.7rem 0;
+  }
+  .feature-chip {
+    background: var(--secondary-background-color, #F1F5F9);
+    border: 1px solid color-mix(in srgb, var(--text-color, #0F172A) 10%, transparent);
+    border-radius: 999px;
+    padding: 6px 14px;
+    font-size: 0.8rem;
+    font-weight: 500;
+    color: color-mix(in srgb, var(--text-color, #0F172A) 75%, transparent);
+    white-space: nowrap;
+  }
+
+  /* ── Captions under the two big actions ── */
+  .action-cap {
+    text-align: center;
+    color: color-mix(in srgb, var(--text-color, #0F172A) 55%, transparent);
+    font-size: 0.8rem;
+    line-height: 1.45;
+    margin: 0.45rem 0.3rem 1rem 0.3rem;
+  }
+
+  /* ── Section headers on form/result/troubleshoot views ── */
   .step-label {
-    color: #1E3A8A;
+    color: var(--primary-color, #1E3A8A);
     font-size: 0.75rem;
     font-weight: 700;
     text-transform: uppercase;
     letter-spacing: 0.06em;
     margin-bottom: 0.2rem;
   }
-  .form-title { color: #0F172A; font-size: 1.5rem; font-weight: 800; letter-spacing: -0.02em; margin-bottom: 0.2rem; }
-  .form-sub   { color: #64748B; font-size: 0.92rem; margin-bottom: 1rem; }
+  .form-title {
+    color: var(--text-color, #0F172A);
+    font-size: clamp(1.25rem, 4.5vw, 1.5rem);
+    font-weight: 800;
+    letter-spacing: -0.02em;
+    margin-bottom: 0.2rem;
+  }
+  .form-sub {
+    color: color-mix(in srgb, var(--text-color, #0F172A) 60%, transparent);
+    font-size: 0.92rem;
+    margin-bottom: 1rem;
+  }
 
+  /* ── Buttons ── */
   div.stButton > button, div.stDownloadButton > button, div.stFormSubmitButton > button {
     border-radius: 12px;
     font-weight: 600;
   }
-  /* Big home buttons */
-  div.stButton > button[kind="primary"] { padding: 0.9rem 1rem; font-size: 1.05rem; }
-  div.stButton > button[kind="secondary"] { padding: 0.9rem 1rem; font-size: 1.05rem; }
+  /* Big home actions */
+  div.stButton > button[kind="primary"], div.stButton > button[kind="secondary"] {
+    padding: 1.05rem 1rem;
+    font-size: 1.02rem;
+  }
+  div.stButton > button[kind="secondary"] {
+    border: 1.5px solid color-mix(in srgb, var(--text-color, #0F172A) 18%, transparent);
+  }
+
+  /* ── Mobile tweaks ── */
+  @media (max-width: 640px) {
+    .block-container { padding-left: 1rem; padding-right: 1rem; }
+    .feature-row { gap: 6px; }
+    .feature-chip { font-size: 0.74rem; padding: 5px 11px; }
+  }
 </style>
 """, unsafe_allow_html=True)
 
@@ -610,10 +677,16 @@ def generate_lesson_plan():
 if st.session_state.view == "home":
     st.markdown(f"""
     <div class="hero">
+      <div class="hero-logo">🤖</div>
       <div class="badge">Foundation Phase &nbsp;•&nbsp; Grade R–3</div>
-      <h1>Welcome, Teacher 👋</h1>
-      <p>Create a ready-to-print {SUBJECT} lesson plan for your class,
-      or get help with your Cubroid robot.</p>
+      <h1>Welcome, <span class="grad">Teacher</span> 👋</h1>
+      <p>Everything you need to teach {SUBJECT} with your
+      Cubroid robots — planned, aligned and ready to print.</p>
+    </div>
+    <div class="feature-row">
+      <span class="feature-chip">📘 CAPS aligned</span>
+      <span class="feature-chip">⚡ Ready in about a minute</span>
+      <span class="feature-chip">🖨️ Print-ready PDF</span>
     </div>
     """, unsafe_allow_html=True)
 
@@ -622,10 +695,16 @@ if st.session_state.view == "home":
         if st.button("✨ Generate Lesson Plan", type="primary", use_container_width=True):
             st.session_state.view = "form"
             st.rerun()
+        st.markdown('<div class="action-cap">A full lesson plan with pages '
+                    'from your teacher guides included</div>',
+                    unsafe_allow_html=True)
     with col2:
         if st.button("🔧 Troubleshoot My Robot", use_container_width=True):
             st.session_state.view = "troubleshoot"
             st.rerun()
+        st.markdown('<div class="action-cap">Step-by-step fixes straight '
+                    'from the official Cubroid guides</div>',
+                    unsafe_allow_html=True)
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
