@@ -1,4 +1,4 @@
-import streamlit as st  # Cubroid Lesson Generator v2
+import streamlit as st  # Cubroid Lesson Generator v3
 import openai
 import os
 import io
@@ -36,10 +36,10 @@ MISSION_GUIDE = "Mission Coding-Phone.pdf"
 st.set_page_config(
     page_title="Cubroid Lesson Generator",
     page_icon="🤖",
-    layout="wide",
+    layout="centered",
 )
 
-# ── Custom CSS — clean, minimal, polished ─────────────────────────────────────
+# ── Custom CSS — clean, minimal, teacher-facing ───────────────────────────────
 st.markdown("""
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
@@ -48,21 +48,10 @@ st.markdown("""
 
   /* Hide Streamlit chrome */
   #MainMenu, footer, header[data-testid="stHeader"] { visibility: hidden; height: 0; }
-  .block-container { padding-top: 2.5rem; max-width: 1100px; }
-
-  /* Sidebar — light, quiet */
-  section[data-testid="stSidebar"] {
-    background: #FFFFFF;
-    border-right: 1px solid #E2E8F0;
-  }
-  section[data-testid="stSidebar"] .block-container { padding-top: 1.5rem; }
-  section[data-testid="stSidebar"] label { font-size: 0.8rem !important; color: #475569 !important; }
+  .block-container { padding-top: 3rem; max-width: 760px; }
 
   /* Hero */
-  .hero {
-    text-align: center;
-    padding: 2.5rem 1rem 2rem 1rem;
-  }
+  .hero { text-align: center; padding: 2rem 1rem 1.5rem 1rem; }
   .hero .badge {
     display: inline-block;
     background: #EFF6FF;
@@ -70,7 +59,7 @@ st.markdown("""
     border: 1px solid #BFDBFE;
     border-radius: 999px;
     padding: 4px 14px;
-    font-size: 0.75rem;
+    font-size: 0.72rem;
     font-weight: 600;
     letter-spacing: 0.04em;
     text-transform: uppercase;
@@ -78,80 +67,39 @@ st.markdown("""
   }
   .hero h1 {
     color: #0F172A;
-    font-size: 2.4rem;
+    font-size: 2.3rem;
     font-weight: 800;
     letter-spacing: -0.03em;
     margin: 0 0 0.5rem 0;
-    line-height: 1.1;
+    line-height: 1.15;
   }
   .hero h1 span { color: #1E3A8A; }
   .hero p {
     color: #64748B;
-    font-size: 1.05rem;
-    max-width: 540px;
+    font-size: 1.02rem;
+    max-width: 480px;
     margin: 0 auto;
     line-height: 1.6;
   }
 
-  /* Config summary pills */
-  .pill-row { text-align: center; margin: 1.2rem 0 2rem 0; }
-  .pill {
-    display: inline-block;
-    background: #FFFFFF;
-    border: 1px solid #E2E8F0;
-    border-radius: 999px;
-    padding: 6px 16px;
-    margin: 4px;
-    font-size: 0.85rem;
-    color: #334155;
-    font-weight: 500;
-  }
-  .pill b { color: #1E3A8A; font-weight: 700; }
-
-  /* Section cards */
-  .card {
-    background: #FFFFFF;
-    border: 1px solid #E2E8F0;
-    border-radius: 14px;
-    padding: 18px 20px;
-    margin-bottom: 14px;
-    transition: box-shadow .15s ease, border-color .15s ease;
-  }
-  .card:hover { box-shadow: 0 4px 16px rgba(15,23,42,0.06); border-color: #CBD5E1; }
-  .card h4 {
-    margin: 0 0 6px 0;
-    color: #0F172A;
-    font-size: 0.92rem;
+  .step-label {
+    color: #1E3A8A;
+    font-size: 0.75rem;
     font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    margin-bottom: 0.2rem;
   }
-  .card .num {
-    display: inline-block;
-    width: 22px; height: 22px;
-    line-height: 22px;
-    text-align: center;
-    background: #1E3A8A;
-    color: white;
-    border-radius: 6px;
-    font-size: 0.7rem;
-    font-weight: 700;
-    margin-right: 8px;
-  }
-  .card p { margin: 0; color: #64748B; font-size: 0.84rem; line-height: 1.5; }
+  .form-title { color: #0F172A; font-size: 1.5rem; font-weight: 800; letter-spacing: -0.02em; margin-bottom: 0.2rem; }
+  .form-sub   { color: #64748B; font-size: 0.92rem; margin-bottom: 1rem; }
 
-  /* Sources strip */
-  .sources {
-    background: #F8FAFC;
-    border: 1px dashed #CBD5E1;
-    border-radius: 14px;
-    padding: 16px 20px;
-    margin-top: 0.5rem;
-    font-size: 0.84rem;
-    color: #475569;
-    line-height: 1.7;
+  div.stButton > button, div.stDownloadButton > button, div.stFormSubmitButton > button {
+    border-radius: 12px;
+    font-weight: 600;
   }
-  .sources b { color: #1E3A8A; }
-
-  div.stButton > button, div.stDownloadButton > button { border-radius: 10px; font-weight: 600; }
+  /* Big home buttons */
+  div.stButton > button[kind="primary"] { padding: 0.9rem 1rem; font-size: 1.05rem; }
+  div.stButton > button[kind="secondary"] { padding: 0.9rem 1rem; font-size: 1.05rem; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -160,7 +108,7 @@ openai.api_key = st.secrets["OPENAI_API_KEY"]
 Settings.llm = OpenAI(model="gpt-4o-mini", api_key=st.secrets["OPENAI_API_KEY"])
 Settings.embed_model = OpenAIEmbedding(api_key=st.secrets["OPENAI_API_KEY"])
 
-@st.cache_resource(show_spinner="Loading knowledge base...")
+@st.cache_resource(show_spinner="Getting things ready for you...")
 def load_index():
     parser = LlamaParse(
         api_key=st.secrets["LLAMA_CLOUD_API_KEY"],
@@ -177,7 +125,7 @@ index = load_index()
 
 # ── Session state defaults ────────────────────────────────────────────────────
 DEFAULTS = {
-    "step": 1,
+    "view": "home",          # home | form | result | troubleshoot
     "grade": "Grade R",
     "term": 1,
     "week": 1,
@@ -186,7 +134,6 @@ DEFAULTS = {
     "teacher_name": "",
     "school_name": "",
     "custom_notes": "",
-    "mode": "lesson",
     "result": None,
     "images": [],
 }
@@ -455,238 +402,225 @@ def build_pdf(text, images, grade, subject, term, week, duration, teacher, schoo
     return buf
 
 
+# ── GENERATION ────────────────────────────────────────────────────────────────
+def generate_lesson_plan():
+    notes_line = (f"Additional teacher notes: {st.session_state.custom_notes}"
+                  if st.session_state.custom_notes else "")
+    prompt = f"""
+    Create a fully structured {st.session_state.duration} CAPS-aligned
+    {SUBJECT} lesson plan for {st.session_state.grade} (South African
+    Foundation Phase), Term {st.session_state.term},
+    Week {st.session_state.week}. Robot used: {st.session_state.robot}.
+    {notes_line}
+
+    You have three kinds of source documents:
+    1. The CAPS curriculum document ("{CAPS_DOC}") — use it for curriculum
+       alignment: name the specific content area, topic and skills for this
+       grade and term.
+    2. The Cubroid {TEACHER_GUIDE} — use these for the actual lesson
+       activities. You MUST state exactly which Step 1 Book (and pages,
+       if available) the activities come from.
+    3. The Mission Guide ("{MISSION_GUIDE}") — use it ONLY for the
+       "Further Work / Extension" section.
+
+    Format the output in markdown. Use "## " for every section heading
+    (no bold-only headings, no numbered headings). Use "- " for bullets.
+    Produce exactly these sections:
+
+    ## CAPS Alignment
+    ## Learning Objectives
+    ## Introduction / Hook (5 min)
+    ## Direct Instruction (10 min)
+    ## Guided Practice (15 min)
+    ## Independent / Group Task (10 min)
+    ## Wrap-up & Assessment (5 min)
+    ## Resources Required
+    ## Differentiation
+    ## Teacher Guide Reference
+    ## Further Work (Mission Guide)
+
+    In "Teacher Guide Reference", list the specific Step 1 Book(s) and
+    pages the lesson draws on, so the teacher can refer back to the book.
+    Keep activities age-appropriate for {st.session_state.grade}.
+    Use only information from the provided documents.
+    If something is not covered in the documents, say so.
+    """
+    engine = index.as_query_engine(similarity_top_k=8)
+    response = engine.query(prompt)
+    result_text = str(response)
+    sources_md = format_sources(response.source_nodes)
+    if sources_md:
+        result_text += f"\n\n## Source Documents\n{sources_md}"
+    st.session_state.result = result_text
+    st.session_state.images = extract_page_screenshots(response.source_nodes)
+
+
 # ═══════════════════════════════════════════════════════════════════════════════
-# SIDEBAR
+# VIEW: HOME
 # ═══════════════════════════════════════════════════════════════════════════════
-with st.sidebar:
-    st.markdown(f"## 🤖 Cubroid LMS")
-    st.caption(f"Foundation Phase • {SUBJECT}")
-    st.markdown("---")
-    mode_choice = st.radio("Mode", ["📋 Lesson Planner", "🔧 Troubleshooting"],
-                           label_visibility="collapsed")
-    st.session_state.mode = "lesson" if "Lesson" in mode_choice else "troubleshoot"
+if st.session_state.view == "home":
+    st.markdown(f"""
+    <div class="hero">
+      <div class="badge">Foundation Phase &nbsp;•&nbsp; Grade R–3</div>
+      <h1>Welcome, Teacher 👋</h1>
+      <p>Create a ready-to-print {SUBJECT} lesson plan for your class,
+      or get help with your Cubroid robot.</p>
+    </div>
+    """, unsafe_allow_html=True)
 
-    if st.session_state.mode == "lesson":
-        st.markdown("##### Class details")
-        st.session_state.grade = st.selectbox(
-            "Grade", GRADES, index=GRADES.index(st.session_state.grade))
-        robots = ["Cubroid Coding Blocks", "Cubroid Artibo"]
-        st.session_state.robot = st.selectbox("Robot kit", robots)
-        st.session_state.term = st.selectbox("Term", [1, 2, 3, 4],
-                                             index=st.session_state.term - 1)
-        st.session_state.week = st.number_input("Week", min_value=1, max_value=10,
-                                                value=st.session_state.week)
-        st.session_state.duration = st.selectbox(
-            "Duration", ["30 minutes", "45 minutes", "60 minutes"])
-
-        st.markdown("##### Teacher info")
-        st.session_state.teacher_name = st.text_input(
-            "Teacher name", value=st.session_state.teacher_name)
-        st.session_state.school_name = st.text_input(
-            "School name", value=st.session_state.school_name)
-
-        st.markdown("##### Notes")
-        st.session_state.custom_notes = st.text_area(
-            "Extra context for the AI",
-            value=st.session_state.custom_notes,
-            placeholder="e.g. Class has 25 learners, focus on teamwork...",
-            height=90,
-        )
-        st.markdown("---")
+    col1, col2 = st.columns(2)
+    with col1:
         if st.button("✨ Generate Lesson Plan", type="primary", use_container_width=True):
-            st.session_state.step = 2
-            st.session_state.result = None
-            st.session_state.images = []
+            st.session_state.view = "form"
+            st.rerun()
+    with col2:
+        if st.button("🔧 Troubleshoot My Robot", use_container_width=True):
+            st.session_state.view = "troubleshoot"
             st.rerun()
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# MAIN AREA
+# VIEW: FORM
 # ═══════════════════════════════════════════════════════════════════════════════
-
-# ── LESSON PLANNER ────────────────────────────────────────────────────────────
-if st.session_state.mode == "lesson":
-
-    # Trigger generation
-    if st.session_state.step == 2 and st.session_state.result is None:
-        notes_line = (f"Additional teacher notes: {st.session_state.custom_notes}"
-                      if st.session_state.custom_notes else "")
-        prompt = f"""
-        Create a fully structured {st.session_state.duration} CAPS-aligned
-        {SUBJECT} lesson plan for {st.session_state.grade} (South African
-        Foundation Phase), Term {st.session_state.term},
-        Week {st.session_state.week}. Robot used: {st.session_state.robot}.
-        {notes_line}
-
-        You have three kinds of source documents:
-        1. The CAPS curriculum document ("{CAPS_DOC}") — use it for curriculum
-           alignment: name the specific content area, topic and skills for this
-           grade and term.
-        2. The Cubroid {TEACHER_GUIDE} — use these for the actual lesson
-           activities. You MUST state exactly which Step 1 Book (and pages,
-           if available) the activities come from.
-        3. The Mission Guide ("{MISSION_GUIDE}") — use it ONLY for the
-           "Further Work / Extension" section.
-
-        Format the output in markdown. Use "## " for every section heading
-        (no bold-only headings, no numbered headings). Use "- " for bullets.
-        Produce exactly these sections:
-
-        ## CAPS Alignment
-        ## Learning Objectives
-        ## Introduction / Hook (5 min)
-        ## Direct Instruction (10 min)
-        ## Guided Practice (15 min)
-        ## Independent / Group Task (10 min)
-        ## Wrap-up & Assessment (5 min)
-        ## Resources Required
-        ## Differentiation
-        ## Teacher Guide Reference
-        ## Further Work (Mission Guide)
-
-        In "Teacher Guide Reference", list the specific Step 1 Book(s) and
-        pages the lesson draws on, so the teacher can refer back to the book.
-        Keep activities age-appropriate for {st.session_state.grade}.
-        Use only information from the provided documents.
-        If something is not covered in the documents, say so.
-        """
-        with st.spinner("Generating lesson plan and capturing source pages..."):
-            engine = index.as_query_engine(similarity_top_k=8)
-            response = engine.query(prompt)
-            result_text = str(response)
-            sources_md = format_sources(response.source_nodes)
-            if sources_md:
-                result_text += f"\n\n## Source Documents\n{sources_md}"
-            st.session_state.result = result_text
-            st.session_state.images = extract_page_screenshots(response.source_nodes)
-        st.session_state.step = 1
+elif st.session_state.view == "form":
+    if st.button("← Back"):
+        st.session_state.view = "home"
         st.rerun()
 
-    # Idle state — landing page
-    if st.session_state.result is None:
+    st.markdown("""
+    <div class="step-label">Lesson Plan</div>
+    <div class="form-title">Tell us about your class</div>
+    <div class="form-sub">We'll build a CAPS-aligned lesson plan around these details.</div>
+    """, unsafe_allow_html=True)
+
+    with st.form("lesson_form"):
+        c1, c2 = st.columns(2)
+        with c1:
+            grade = st.selectbox("Grade", GRADES,
+                                 index=GRADES.index(st.session_state.grade))
+            term = st.selectbox("Term", [1, 2, 3, 4],
+                                index=st.session_state.term - 1)
+            week = st.number_input("Week", min_value=1, max_value=10,
+                                   value=st.session_state.week)
+        with c2:
+            duration = st.selectbox("Lesson duration",
+                                    ["30 minutes", "45 minutes", "60 minutes"])
+            robot = st.selectbox("Robot kit",
+                                 ["Cubroid Coding Blocks", "Cubroid Artibo"])
+
+        c3, c4 = st.columns(2)
+        with c3:
+            teacher_name = st.text_input("Your name (optional)",
+                                         value=st.session_state.teacher_name)
+        with c4:
+            school_name = st.text_input("School name (optional)",
+                                        value=st.session_state.school_name)
+
+        custom_notes = st.text_area(
+            "Anything we should know about your class? (optional)",
+            value=st.session_state.custom_notes,
+            placeholder="e.g. 25 learners, first time using the robots, focus on teamwork...",
+            height=90,
+        )
+
+        submitted = st.form_submit_button("✨ Generate Lesson Plan",
+                                          type="primary", use_container_width=True)
+
+    if submitted:
+        st.session_state.update(
+            grade=grade, term=term, week=week, duration=duration, robot=robot,
+            teacher_name=teacher_name, school_name=school_name,
+            custom_notes=custom_notes,
+        )
+        with st.spinner("Building your lesson plan — this takes about a minute..."):
+            generate_lesson_plan()
+        st.session_state.view = "result"
+        st.rerun()
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# VIEW: RESULT
+# ═══════════════════════════════════════════════════════════════════════════════
+elif st.session_state.view == "result":
+    top1, top2 = st.columns([3, 1])
+    with top1:
         st.markdown(f"""
-        <div class="hero">
-          <div class="badge">Foundation Phase &nbsp;•&nbsp; CAPS Aligned</div>
-          <h1>Cubroid <span>Lesson Generator</span></h1>
-          <p>Polished, print-ready {SUBJECT} lesson plans for Grade R–3 —
-          grounded in the CAPS curriculum, Step 1 Teacher Guides and
-          Mission Guides, with source-page screenshots included.</p>
-        </div>
-        <div class="pill-row">
-          <span class="pill"><b>{st.session_state.grade}</b></span>
-          <span class="pill">{SUBJECT}</span>
-          <span class="pill">Term <b>{st.session_state.term}</b> · Week <b>{st.session_state.week}</b></span>
-          <span class="pill">{st.session_state.duration}</span>
-          <span class="pill">{st.session_state.robot}</span>
-        </div>
+        <div class="step-label">Lesson Plan Ready</div>
+        <div class="form-title">{st.session_state.grade} · Term {st.session_state.term} · Week {st.session_state.week}</div>
+        <div class="form-sub">{SUBJECT} · {st.session_state.duration} · {st.session_state.robot}</div>
         """, unsafe_allow_html=True)
+    with top2:
+        if st.button("← Start Over", use_container_width=True):
+            st.session_state.view = "home"
+            st.session_state.result = None
+            st.session_state.images = []
+            st.rerun()
 
-        preview_sections = [
-            ("CAPS Alignment",          f"Content area, topic & skills from the official CAPS {SUBJECT} document"),
-            ("Learning Objectives",     "Three curriculum-aligned objectives for the lesson"),
-            ("Lesson Flow",             "Hook, direct instruction, guided practice, group task and wrap-up — fully timed"),
-            ("Teacher Guide Reference", "The exact Step 1 Book and pages the activities come from"),
-            ("Further Work",            "Extension activities drawn from the Cubroid Mission Guide"),
-            ("Source Screenshots",      "Page images captured from the actual curriculum and guide documents"),
-        ]
-        cols = st.columns(2)
-        for idx, (title, desc) in enumerate(preview_sections):
-            with cols[idx % 2]:
-                st.markdown(f"""
-                <div class="card">
-                  <h4><span class="num">{idx + 1}</span>{title}</h4>
-                  <p>{desc}</p>
-                </div>
-                """, unsafe_allow_html=True)
+    pdf_buf = build_pdf(
+        st.session_state.result,
+        st.session_state.images,
+        st.session_state.grade,
+        SUBJECT,
+        st.session_state.term,
+        st.session_state.week,
+        st.session_state.duration,
+        st.session_state.teacher_name,
+        st.session_state.school_name,
+    )
+    fname = (f"Cubroid_LP_{st.session_state.grade.replace(' ','')}"
+             f"_T{st.session_state.term}_W{st.session_state.week}.pdf")
 
-        st.markdown(f"""
-        <div class="sources">
-          <b>Knowledge base</b> &nbsp;—&nbsp; {CAPS_DOC} (Curriculum)
-          &nbsp;·&nbsp; {TEACHER_GUIDE} &nbsp;·&nbsp; {MISSION_GUIDE}
-        </div>
-        """, unsafe_allow_html=True)
+    d1, d2 = st.columns(2)
+    with d1:
+        st.download_button("⬇️ Download PDF", data=pdf_buf, file_name=fname,
+                           mime="application/pdf", type="primary",
+                           use_container_width=True)
+    with d2:
+        if st.button("✏️ Change Details & Regenerate", use_container_width=True):
+            st.session_state.view = "form"
+            st.session_state.result = None
+            st.session_state.images = []
+            st.rerun()
 
-        if st.session_state.custom_notes:
-            st.markdown(f"""
-            <div class="card" style="margin-top:14px">
-              <h4>Your notes</h4>
-              <p>{st.session_state.custom_notes}</p>
-            </div>
-            """, unsafe_allow_html=True)
+    st.markdown("---")
+    st.markdown(st.session_state.result)
 
-        st.info("👈  Set the class details in the sidebar, then click **Generate Lesson Plan**")
-
-    # Result state
-    else:
-        st.markdown("### ✅ Lesson Plan Ready")
-
-        if st.session_state.images:
-            with st.expander(
-                f"🖼️ {len(st.session_state.images)} source-page screenshots "
-                "(included in the PDF)",
-                expanded=False
-            ):
-                img_cols = st.columns(min(len(st.session_state.images), 4))
-                for i, img_data in enumerate(st.session_state.images):
-                    with img_cols[i % len(img_cols)]:
-                        st.image(img_data["bytes"],
-                                 caption=f"{img_data['source']} p.{img_data['page']}",
-                                 use_container_width=True)
-
-        col_text, col_dl = st.columns([3, 1])
-        with col_text:
-            st.markdown(st.session_state.result)
-
-        with col_dl:
-            st.markdown("#### 📥 Export")
-            pdf_buf = build_pdf(
-                st.session_state.result,
-                st.session_state.images,
-                st.session_state.grade,
-                SUBJECT,
-                st.session_state.term,
-                st.session_state.week,
-                st.session_state.duration,
-                st.session_state.teacher_name,
-                st.session_state.school_name,
-            )
-            fname = (f"Cubroid_LP_{st.session_state.grade.replace(' ','')}"
-                     f"_T{st.session_state.term}_W{st.session_state.week}.pdf")
-            st.download_button(
-                "⬇️ Download PDF",
-                data=pdf_buf,
-                file_name=fname,
-                mime="application/pdf",
-                type="primary",
-                use_container_width=True,
-            )
-            st.download_button(
-                "📄 Download Text",
-                data=st.session_state.result,
-                file_name=fname.replace(".pdf", ".txt"),
-                mime="text/plain",
-                use_container_width=True,
-            )
-            if st.button("🔄 Generate New", use_container_width=True):
-                st.session_state.result = None
-                st.session_state.images = []
-                st.rerun()
+    if st.session_state.images:
+        st.markdown("---")
+        st.markdown("##### 📎 Pages from your teacher guides (included in the PDF)")
+        img_cols = st.columns(min(len(st.session_state.images), 4))
+        for i, img_data in enumerate(st.session_state.images):
+            with img_cols[i % len(img_cols)]:
+                st.image(img_data["bytes"],
+                         caption=f"{img_data['source']} p.{img_data['page']}",
+                         use_container_width=True)
 
 
-# ── TROUBLESHOOTING ───────────────────────────────────────────────────────────
-else:
-    st.markdown("### 🔧 Troubleshooting Assistant")
-    st.markdown("Describe a problem and get step-by-step guidance from the official Cubroid guides.")
+# ═══════════════════════════════════════════════════════════════════════════════
+# VIEW: TROUBLESHOOT
+# ═══════════════════════════════════════════════════════════════════════════════
+elif st.session_state.view == "troubleshoot":
+    if st.button("← Back"):
+        st.session_state.view = "home"
+        st.rerun()
+
+    st.markdown("""
+    <div class="step-label">Troubleshooting</div>
+    <div class="form-title">What's going wrong?</div>
+    <div class="form-sub">Describe the problem and we'll find the fix in the official Cubroid guides.</div>
+    """, unsafe_allow_html=True)
+
     question = st.text_area(
-        "What is the problem?",
+        "Describe the problem",
         placeholder="e.g. The Cubroid blocks won't connect to the tablet via Bluetooth",
         height=120,
+        label_visibility="collapsed",
     )
-    if st.button("🔍 Find Solution", type="primary"):
+    if st.button("🔍 Find Solution", type="primary", use_container_width=True):
         if not question.strip():
             st.warning("Please describe the problem first.")
         else:
-            with st.spinner("Searching guides..."):
+            with st.spinner("Searching the guides..."):
                 engine = index.as_query_engine(similarity_top_k=4)
                 response = engine.query(f"""
                     A teacher has this problem with a Cubroid robot: {question}
@@ -694,5 +628,5 @@ else:
                     numbered step-by-step solution.
                     If the answer is not in the documents, say so clearly.
                 """)
-            st.success("Solution found!")
+            st.success("Here's what the guides say:")
             st.markdown(str(response))
